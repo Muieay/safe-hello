@@ -9,7 +9,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Share
 } from "react-native";
+import i18n from "./i18n/locales";
 
 const DEFAULT_KEY = "safety";
 const KEY_STORE = "KEY_HISTORY";
@@ -85,7 +87,18 @@ const [key, setKey] = useState(DEFAULT_KEY);
 
   function copy(text: string) {
     Clipboard.setStringAsync(text);
-    Alert.alert("已复制");
+    Alert.alert(i18n.t("copy_success"));
+  }
+  async function  copyShare(text: string){
+    if (!text) return;
+    try {
+      copy(text);
+      await Share.share({
+        message: text,
+      });
+    } catch (error) {
+      Alert.alert('Error');
+    }
   }
 
   function encrypt() {
@@ -100,9 +113,9 @@ const [key, setKey] = useState(DEFAULT_KEY);
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>🔐 文字加密工具</Text>
+      <Text style={styles.title}>{i18n.t("title")}</Text>
 
-      <Text style={styles.label}>密钥</Text>
+      <Text style={styles.label}>{i18n.t("key")}</Text>
       <TextInput
         style={styles.input}
         value={key}
@@ -122,7 +135,7 @@ const [key, setKey] = useState(DEFAULT_KEY);
         ))}
       </View>
 
-      <Text style={styles.label}>明文</Text>
+      <Text style={styles.label}>{i18n.t("plaintext")}</Text>
       <TextInput
         style={styles.textArea}
         multiline
@@ -130,28 +143,35 @@ const [key, setKey] = useState(DEFAULT_KEY);
         onChangeText={setPlain}
       />
       {/* <TouchableOpacity onPress={() => copy(plain)}>
-        <Text style={styles.copy}>复制明文</Text>
+        <Text style={styles.copy}>{i18n.t("copy_plain")}</Text>
       </TouchableOpacity> */}
 
       <View style={styles.row}>
         <TouchableOpacity style={styles.btn} onPress={encrypt}>
-          <Text style={styles.btnText}>加密 ↓</Text>
+          <Text style={styles.btnText}>{i18n.t("encrypt")}</Text>
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.btn} onPress={decrypt}>
-          <Text style={styles.btnText}>解密 ↑</Text>
+          <Text style={styles.btnText}>{i18n.t("decrypt")}</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.label}>密文</Text>
+      <Text style={styles.label}>{i18n.t("ciphertext")}</Text>
       <TextInput
         style={styles.textArea}
         multiline
         value={cipher}
         onChangeText={setCipher}
       />
-      <TouchableOpacity onPress={() => copy(cipher)}>
-        <Text style={styles.copy}>复制密文</Text>
-      </TouchableOpacity>
+      <View style={styles.copyLink}>
+        <TouchableOpacity onPress={() => copy(cipher)}>
+          <Text style={styles.copy}>{i18n.t("copy_cipher")}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => copyShare(cipher)}>
+          <Text style={styles.copy}>{i18n.t("copy_share")}</Text>
+        </TouchableOpacity>
+      </View>
+
     </ScrollView>
   );
 }
@@ -261,5 +281,10 @@ const styles = StyleSheet.create({
     color: '#1565c0',
     fontSize: 14,
     fontWeight: '500'
+  },
+  copyLink: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   }
 });
