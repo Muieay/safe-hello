@@ -1,20 +1,265 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
+import React, { useEffect, useState } from "react";
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+const DEFAULT_KEY = "safety";
+const KEY_STORE = "KEY_HISTORY";
+
+/* ================= Encryption Core ================= */
+
+type Range = {
+  start: number;
+  end: number;
+};
+
+const RANGES: Range[] = [
+  { start: 0x30, end: 0x39 }, // 0-9 数字（必须在最前）
+  { start: 0x41, end: 0x5a }, // A-Z
+  { start: 0x61, end: 0x7a }, // a-z
+  { start: 0x4e00, end: 0x9fff }, // 中文
+  { start: 0x3040, end: 0x309f }, // 平假名
+  { start: 0x30a0, end: 0x30ff }, // 片假名
+  { start: 0xac00, end: 0xd7af }, // 韩文
+  { start: 0x21, end: 0x2f }, // ASCII 标点 1
+  { start: 0x3a, end: 0x40 }, // ASCII 标点 2 (@ 在这里)
+  { start: 0x5b, end: 0x60 }, // ASCII 标点 3
+  { start: 0x7b, end: 0x7e }, // ASCII 标点 4
+];
+
+function getKeyShift(key: string): number {
+  return [...key].reduce((sum, c) => sum + c.codePointAt(0)!, 0);
+}
+
+function shiftChar(char: string, shift: number): string {
+  const code = char.codePointAt(0)!;
+
+  for (const r of RANGES) {
+    if (code >= r.start && code <= r.end) {
+      const size = r.end - r.start + 1;
+      const next = ((code - r.start + shift) % size + size) % size;
+      return String.fromCodePoint(r.start + next);
+    }
+  }
+
+  return char;
+}
+
+function crypt(text: string, key: string, decrypt = false): string {
+  const base = getKeyShift(key);
+
+  return [...text]
+    .map((c, i) =>
+      shiftChar(c, (decrypt ? -1 : 1) * (base + i))
+    )
+    .join("");
+}
 
 export default function App() {
+const [key, setKey] = useState(DEFAULT_KEY);
+  const [keys, setKeys] = useState<string[]>([]);
+  const [plain, setPlain] = useState("");
+  const [cipher, setCipher] = useState("");
+
+  useEffect(() => {
+    AsyncStorage.getItem(KEY_STORE).then((v) => {
+      if (v) setKeys(JSON.parse(v));
+    });
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem(KEY_STORE, JSON.stringify(keys));
+  }, [keys]);
+
+  function saveKey(k: string) {
+    if (!keys.includes(k)) setKeys([k, ...keys]);
+  }
+
+  function copy(text: string) {
+    Clipboard.setStringAsync(text);
+    Alert.alert("已复制");
+  }
+
+  function encrypt() {
+    saveKey(key);
+    setCipher(crypt(plain, key));
+  }
+
+  function decrypt() {
+    saveKey(key);
+    setPlain(crypt(cipher, key, true));
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>🔐 文字加密工具</Text>
+
+      <Text style={styles.label}>密钥</Text>
+      <TextInput
+        style={styles.input}
+        value={key}
+        onChangeText={setKey}
+      />
+
+      <View style={styles.keyRow}>
+        {keys.map((k) => (
+          <TouchableOpacity
+            key={k}
+            style={styles.keyItem}
+            onPress={() => setKey(k)}
+            onLongPress={() => setKeys(keys.filter((x) => x !== k))}
+          >
+            <Text style={styles.keyItemText}>{k}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={styles.label}>明文</Text>
+      <TextInput
+        style={styles.textArea}
+        multiline
+        value={plain}
+        onChangeText={setPlain}
+      />
+      {/* <TouchableOpacity onPress={() => copy(plain)}>
+        <Text style={styles.copy}>复制明文</Text>
+      </TouchableOpacity> */}
+
+      <View style={styles.row}>
+        <TouchableOpacity style={styles.btn} onPress={encrypt}>
+          <Text style={styles.btnText}>加密 ↓</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btn} onPress={decrypt}>
+          <Text style={styles.btnText}>解密 ↑</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.label}>密文</Text>
+      <TextInput
+        style={styles.textArea}
+        multiline
+        value={cipher}
+        onChangeText={setCipher}
+      />
+      <TouchableOpacity onPress={() => copy(cipher)}>
+        <Text style={styles.copy}>复制密文</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { 
     flex: 1,
-    backgroundColor: '#fff',
+    padding: 20,
+    backgroundColor: '#f8f9fa'
+  },
+  title: { 
+    fontSize: 28, 
+    fontWeight: '800', 
+    marginBottom: 24,
+    color: '#1a1a1a',
+    textAlign: 'center',
+    letterSpacing: 0.5
+  },
+  label: { 
+    fontWeight: '700', 
+    marginTop: 16,
+    marginBottom: 6,
+    fontSize: 16,
+    color: '#2c3e50'
+  },
+  input: {
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 6,
+    fontSize: 16,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  textArea: {
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    padding: 14,
+    minHeight: 120,
+    marginTop: 6,
+    fontSize: 16,
+    backgroundColor: 'white',
+    textAlignVertical: 'top',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  copy: { 
+    color: '#007aff', 
+    marginTop: 8,
+    marginBottom: 4,
+    fontSize: 15,
+    fontWeight: '600',
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: 20,
+    gap: 12
+  },
+  btn: {
+    flex: 1,
+    backgroundColor: '#007aff',
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#007aff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4
   },
+  btnText: { 
+    color: '#fff', 
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5
+  },
+  keyRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8
+  },
+  keyItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#bbdefb'
+  },
+  keyItemText: {
+    color: '#1565c0',
+    fontSize: 14,
+    fontWeight: '500'
+  }
 });
