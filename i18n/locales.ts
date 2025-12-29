@@ -3,7 +3,7 @@ import { I18n } from "i18n-js";
 
 const i18n = new I18n({
     zh: {
-        title: "🔐 文字加密工具",
+        title: "🔐 密语",
         key: "密钥",
         plaintext: "明文",
         ciphertext: "密文",

@@ -87,7 +87,6 @@ const [key, setKey] = useState(DEFAULT_KEY);
 
   function copy(text: string) {
     Clipboard.setStringAsync(text);
-    Alert.alert(i18n.t("copy_success"));
   }
   async function  copyShare(text: string){
     if (!text) return;
@@ -113,6 +112,7 @@ const [key, setKey] = useState(DEFAULT_KEY);
 
   return (
     <ScrollView style={styles.container}>
+      <View style={{height: 25}}></View>
       <Text style={styles.title}>{i18n.t("title")}</Text>
 
       <Text style={styles.label}>{i18n.t("key")}</Text>
