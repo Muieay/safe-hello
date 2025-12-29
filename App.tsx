@@ -12,6 +12,7 @@ import {
   Share
 } from "react-native";
 import i18n from "./i18n/locales";
+import {Platform} from "react-native/types_generated";
 
 const DEFAULT_KEY = "safety";
 const KEY_STORE = "KEY_HISTORY";
@@ -66,7 +67,7 @@ function crypt(text: string, key: string, decrypt = false): string {
 }
 
 export default function App() {
-const [key, setKey] = useState(DEFAULT_KEY);
+  const [key, setKey] = useState(DEFAULT_KEY);
   const [keys, setKeys] = useState<string[]>([]);
   const [plain, setPlain] = useState("");
   const [cipher, setCipher] = useState("");
@@ -84,7 +85,6 @@ const [key, setKey] = useState(DEFAULT_KEY);
   function saveKey(k: string) {
     if (!keys.includes(k)) setKeys([k, ...keys]);
   }
-
   function copy(text: string) {
     Clipboard.setStringAsync(text);
   }
