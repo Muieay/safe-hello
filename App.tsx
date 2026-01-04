@@ -109,7 +109,14 @@ export default function App() {
 
   useEffect(() => {
     AsyncStorage.getItem(KEY_STORE).then((v) => {
-      if (v) setKeys(JSON.parse(v));
+      if (v) {
+        const storedKeys = JSON.parse(v);
+        setKeys(storedKeys);
+        // 如果有存储的密钥，使用第一个作为默认值
+        if (storedKeys.length > 0) {
+          setKey(storedKeys[0]);
+        }
+      }
     });
   }, []);
 
@@ -125,15 +132,15 @@ export default function App() {
         const encryptedText = content.substring('safe-say:'.length);
         setCipher(encryptedText);
         await AsyncStorage.setItem(DECR_SATE, content);
-        // 尝试解密（使用默认密钥）
-        setPlain(crypt(encryptedText, DEFAULT_KEY, true));
+        // 使用当前密钥而不是默认密钥进行解密
+        setPlain(crypt(encryptedText, key, true));
       }
     };
     
     // 延迟执行，确保组件完全加载后执行
     const timer = setTimeout(checkClipboard, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [key]); // 依赖于当前的key值
 
   function saveKey(k: string) {
     if (!keys.includes(k)) setKeys([k, ...keys]);
