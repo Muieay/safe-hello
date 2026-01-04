@@ -52,6 +52,24 @@
    npm run ios
    ```
 
+4. 构建项目:
+
+   ```bash
+   # Build for Android
+   eas build --platform android --profile production
+
+   # Build for iOS
+   eas build --platform ios --profile production
+
+   # Prebuild for Android
+   npx expo prebuild --platform android
+
+   # Local build for Android
+   eas build --profile production --platform android --local
+   eas build --profile production --platform android --local --clear-cache
+
+   ```
+
 ## 使用说明
 
 1. **输入密钥**：在"密钥"框中输入您的加密/解密密钥

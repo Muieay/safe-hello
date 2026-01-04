@@ -2,7 +2,7 @@
   "expo": {
     "name": "密语",
     "slug": "safe-hello",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/favicon.png",
     "userInterfaceStyle": "light",
