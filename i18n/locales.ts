@@ -15,7 +15,7 @@ const i18n = new I18n({
         copy_success: "已复制到剪贴板",
         error: "错误",
         paste: "粘贴",
-        decrypted_message: "🔓 解密消息",
+        decrypted_message: "🔓 解密",
         notification_permission_title: "通知权限",
         notification_permission_message: "需要通知权限才能显示解密消息",
         background_monitoring: "后台监听",

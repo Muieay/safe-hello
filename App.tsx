@@ -15,12 +15,10 @@ import {
   Platform
 } from "react-native";
 import i18n from "./i18n/locales";
-import { registerBackgroundFetchAsync } from "./backgroundTask";
 
 // 配置通知处理器
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
     shouldShowBanner: true,
@@ -142,12 +140,12 @@ export default function App() {
     setPlain(crypt(normalizedCipher, key, true));
   }
 
-  // 请求通知权限并自动启用后台任务
+  // 请求通知权限
   useEffect(() => {
     (async () => {
-      // Web 端跳过通知和后台任务
+      // Web 端跳过通知
       if (Platform.OS === 'web') {
-        console.log('Web 端不支持通知和后台任务');
+        console.log('Web 端不支持通知');
         return;
       }
 
@@ -167,14 +165,6 @@ export default function App() {
           i18n.t("notification_permission_title") || "通知权限",
           i18n.t("notification_permission_message") || "需要通知权限才能显示解密消息"
         );
-      }
-
-      // 自动注册后台任务
-      try {
-        await registerBackgroundFetchAsync();
-        console.log('后台任务已自动启用');
-      } catch (error) {
-        console.error('启用后台任务失败:', error);
       }
     })();
   }, []);
@@ -196,7 +186,7 @@ export default function App() {
     AsyncStorage.setItem(KEY_STORE, JSON.stringify(keys));
   }, [keys]);
 
-  // 后台监听剪贴板并自动解密通知
+  // 实时监听剪贴板并自动解密通知（前台+后台）
   useEffect(() => {
     // Web 端不支持后台剪贴板监听
     if (Platform.OS === 'web') {
@@ -204,6 +194,7 @@ export default function App() {
     }
 
     let intervalId: NodeJS.Timeout;
+    let appState = AppState.currentState;
 
     const checkClipboard = async () => {
       try {
@@ -225,11 +216,11 @@ export default function App() {
           // 保存最后处理的剪贴板内容
           await AsyncStorage.setItem(LAST_CLIPBOARD, content);
           
-          // 发送通知
+          // 发送通知（前台和后台都发送）
           if (notificationPermission) {
             await Notifications.scheduleNotificationAsync({
               content: {
-                title: i18n.t("decrypted_message") || "🔓 解密：",
+                title: i18n.t("decrypted_message") || "🔓 解密消息",
                 body: decryptedText.length > 100 
                   ? decryptedText.substring(0, 100) + "..." 
                   : decryptedText,
@@ -247,14 +238,33 @@ export default function App() {
     // 首次检查
     checkClipboard();
 
-    // 定期检查剪贴板（每2秒）
-    intervalId = setInterval(checkClipboard, 2000);
+    // 根据应用状态调整检查频率
+    const startMonitoring = (state: string) => {
+      if (intervalId) clearInterval(intervalId);
+      
+      if (state === 'active') {
+        // 前台：每1秒检查一次（更快响应）
+        intervalId = setInterval(checkClipboard, 1000);
+      } else if (state === 'background') {
+        // 后台：每3秒检查一次（平衡性能和响应速度）
+        // 注意：iOS 可能在几分钟后暂停后台任务
+        intervalId = setInterval(checkClipboard, 3000);
+      }
+    };
+
+    // 启动初始监控
+    startMonitoring(appState);
 
     // 监听应用状态变化
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        checkClipboard();
-      }
+      console.log('应用状态变化:', appState, '->', nextAppState);
+      appState = nextAppState;
+      
+      // 立即检查一次
+      checkClipboard();
+      
+      // 调整监控频率
+      startMonitoring(nextAppState);
     });
 
     return () => {
@@ -280,7 +290,15 @@ export default function App() {
   }
   
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      showsHorizontalScrollIndicator={false}
+      bounces={true}
+      overScrollMode="auto"
+    >
       <View style={{height: 25}}></View>
       <Text style={styles.title}>{i18n.t("title")}</Text>
 
@@ -306,12 +324,21 @@ export default function App() {
 
       <Text style={styles.label}>{i18n.t("plaintext")}</Text>
       <View style={styles.textAreaContainer}>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          value={plain}
-          onChangeText={setPlain}
-        />
+        <ScrollView 
+          style={styles.textAreaScrollView}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          bounces={true}
+        >
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={plain}
+            onChangeText={setPlain}
+            scrollEnabled={false}
+          />
+        </ScrollView>
         <TouchableOpacity 
           style={[styles.pasteBtn, {top: 14}]} 
           onPress={() => paste(setPlain)}
@@ -332,12 +359,21 @@ export default function App() {
 
       <Text style={styles.label}>{i18n.t("ciphertext")}</Text>
       <View style={styles.textAreaContainer}>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          value={cipher}
-          onChangeText={setCipher}
-        />
+        <ScrollView 
+          style={styles.textAreaScrollView}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          bounces={true}
+        >
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={cipher}
+            onChangeText={setCipher}
+            scrollEnabled={false}
+          />
+        </ScrollView>
         <TouchableOpacity 
           style={[styles.pasteBtn, {top: 14}]} 
           onPress={() => paste(setCipher)}
@@ -361,8 +397,11 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1,
-    padding: 20,
     backgroundColor: '#f8f9fa'
+  },
+  contentContainer: {
+    padding: 20,
+    paddingBottom: 40
   },
   title: { 
     fontSize: 28, 
@@ -393,21 +432,26 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2
   },
-  textArea: {
+  textAreaScrollView: {
+    maxHeight: 200,
     borderWidth: 2,
     borderColor: '#e0e0e0',
     borderRadius: 12,
-    padding: 14,
-    minHeight: 120,
     marginTop: 6,
-    fontSize: 16,
     backgroundColor: 'white',
-    textAlignVertical: 'top',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2
+  },
+  textArea: {
+    padding: 14,
+    minHeight: 120,
+    fontSize: 16,
+    backgroundColor: 'white',
+    textAlignVertical: 'top',
+    borderWidth: 0
   },
   copy: { 
     color: '#007aff', 
@@ -468,6 +512,7 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 20
   },
   textAreaContainer: {
     position: 'relative',

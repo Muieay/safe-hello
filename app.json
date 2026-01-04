@@ -2,7 +2,7 @@
   "expo": {
     "name": "密语",
     "slug": "safe-hello",
-    "version": "1.0.2",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/favicon.png",
     "userInterfaceStyle": "light",
@@ -39,16 +39,7 @@
           "color": "#ffffff",
           "sounds": []
         }
-      ],
-      [
-        "expo-background-fetch",
-        {
-          "android": {
-            "minimumInterval": 15
-          }
-        }
-      ],
-      "expo-task-manager"
+      ]
     ],
     "extra": {
       "eas": {

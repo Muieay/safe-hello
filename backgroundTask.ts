@@ -1,10 +1,7 @@
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import * as Notifications from 'expo-notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BACKGROUND_FETCH_TASK = 'background-clipboard-check';
 const LAST_CLIPBOARD = 'LAST_CLIPBOARD';
 const KEY_STORE = 'KEY_HISTORY';
 const DEFAULT_KEY = 'safety';
@@ -56,31 +53,40 @@ function crypt(text: string, key: string, decrypt = false): string {
     .join('');
 }
 
-/* ================= Background Task ================= */
+/* ================= 后台剪贴板检查工具函数 ================= */
 
-TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+/**
+ * 检查剪贴板并自动解密
+ * 这个函数可以在应用的任何地方调用
+ */
+export async function checkClipboardAndDecrypt(
+  key: string,
+  onDecrypted?: (decryptedText: string, encryptedText: string) => void
+): Promise<{ decrypted: boolean; text?: string }> {
   try {
-    const content = await Clipboard.getStringAsync();
+    let content = await Clipboard.getStringAsync();
     const lastClipboard = await AsyncStorage.getItem(LAST_CLIPBOARD);
-
+    
+    // 统一换行符格式为 \n
+    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // 检测到新的加密内容
     if (content && content.startsWith('safe-say:') && content !== lastClipboard) {
       const encryptedText = content.substring('safe-say:'.length);
-      
-      // 获取存储的密钥
-      const keysJson = await AsyncStorage.getItem(KEY_STORE);
-      const keys = keysJson ? JSON.parse(keysJson) : [];
-      const key = keys.length > 0 ? keys[0] : DEFAULT_KEY;
-      
-      // 解密
       const decryptedText = crypt(encryptedText, key, true);
       
       // 保存最后处理的剪贴板内容
       await AsyncStorage.setItem(LAST_CLIPBOARD, content);
       
+      // 回调通知
+      if (onDecrypted) {
+        onDecrypted(decryptedText, encryptedText);
+      }
+      
       // 发送通知
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🔓 解密消息',
+          title: '🔓 解密',
           body: decryptedText.length > 100 
             ? decryptedText.substring(0, 100) + '...' 
             : decryptedText,
@@ -89,49 +95,27 @@ TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
         trigger: null,
       });
 
-      return BackgroundFetch.BackgroundFetchResult.NewData;
+      return { decrypted: true, text: decryptedText };
     }
 
-    return BackgroundFetch.BackgroundFetchResult.NoData;
+    return { decrypted: false };
   } catch (error) {
-    console.error('后台任务错误:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    console.error('剪贴板检查错误:', error);
+    return { decrypted: false };
   }
-});
+}
 
-export async function registerBackgroundFetchAsync() {
+/**
+ * 获取当前密钥
+ */
+export async function getCurrentKey(): Promise<string> {
   try {
-    await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
-      minimumInterval: 15 * 60, // 15分钟（系统最小间隔）
-      stopOnTerminate: false, // 应用终止后继续运行
-      startOnBoot: true, // 设备重启后自动启动
-    });
-    console.log('后台任务已注册');
-  } catch (err) {
-    console.error('注册后台任务失败:', err);
+    const keysJson = await AsyncStorage.getItem(KEY_STORE);
+    const keys = keysJson ? JSON.parse(keysJson) : [];
+    return keys.length > 0 ? keys[0] : DEFAULT_KEY;
+  } catch (error) {
+    console.error('获取密钥失败:', error);
+    return DEFAULT_KEY;
   }
 }
 
-export async function unregisterBackgroundFetchAsync() {
-  try {
-    await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
-    console.log('后台任务已取消注册');
-  } catch (err) {
-    console.error('取消注册后台任务失败:', err);
-  }
-}
-
-export async function checkBackgroundFetchStatus() {
-  const status = await BackgroundFetch.getStatusAsync();
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
-  
-  return {
-    status,
-    isRegistered,
-    statusText: status === BackgroundFetch.BackgroundFetchStatus.Available 
-      ? '可用' 
-      : status === BackgroundFetch.BackgroundFetchStatus.Denied
-      ? '已拒绝'
-      : '受限',
-  };
-}
