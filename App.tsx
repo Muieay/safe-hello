@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
+import * as Notifications from "expo-notifications";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
@@ -9,13 +10,27 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Share
+  Share,
+  AppState,
+  Platform
 } from "react-native";
 import i18n from "./i18n/locales";
+import { registerBackgroundFetchAsync } from "./backgroundTask";
+
+// 配置通知处理器
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 const DEFAULT_KEY = "safety";
 const KEY_STORE = "KEY_HISTORY";
-const DECR_SATE = "DECR_SATE";
+const LAST_CLIPBOARD = "LAST_CLIPBOARD";
 
 /* ================= Encryption Core ================= */
 
@@ -71,6 +86,7 @@ export default function App() {
   const [keys, setKeys] = useState<string[]>([]);
   const [plain, setPlain] = useState("");
   const [cipher, setCipher] = useState("");
+  const [notificationPermission, setNotificationPermission] = useState(false);
 
   async function  copyShare(text: string){
     if (!text) return;
@@ -86,26 +102,82 @@ export default function App() {
   }
 
   async function paste(setter: React.Dispatch<React.SetStateAction<string>>) {
-    const clipboardContent = await Clipboard.getStringAsync();
-    
-    // 检查内容是否包含"safe-say:"前缀，如果包含则过滤掉前缀
-    if (clipboardContent.startsWith('safe-say:')) {
-      const contentWithoutPrefix = clipboardContent.substring('safe-say:'.length);
-      setter(contentWithoutPrefix);
-    } else {
-      setter(clipboardContent);
+    try {
+      let clipboardContent = await Clipboard.getStringAsync();
+      
+      // 统一换行符格式为 \n（避免 \r\n 和 \n 混用导致的解密错误）
+      clipboardContent = clipboardContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      
+      // 检查内容是否包含"safe-say:"前缀，如果包含则过滤掉前缀
+      if (clipboardContent.startsWith('safe-say:')) {
+        const contentWithoutPrefix = clipboardContent.substring('safe-say:'.length);
+        setter(contentWithoutPrefix);
+      } else {
+        setter(clipboardContent);
+      }
+    } catch (error) {
+      // Web 端剪贴板权限被拒绝时的提示
+      if (Platform.OS === 'web') {
+        Alert.alert(
+          i18n.t("clipboard_permission_title") || "剪贴板权限",
+          i18n.t("clipboard_permission_message") || "请允许访问剪贴板或手动粘贴内容"
+        );
+      } else {
+        console.error("粘贴失败:", error);
+      }
     }
   }
 
   function encrypt() {
     saveKey(key);
-    setCipher(crypt(plain, key));
+    // 统一换行符格式为 \n
+    const normalizedPlain = plain.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    setCipher(crypt(normalizedPlain, key));
   }
 
   function decrypt() {
     saveKey(key);
-    setPlain(crypt(cipher, key, true));
+    // 统一换行符格式为 \n
+    const normalizedCipher = cipher.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    setPlain(crypt(normalizedCipher, key, true));
   }
+
+  // 请求通知权限并自动启用后台任务
+  useEffect(() => {
+    (async () => {
+      // Web 端跳过通知和后台任务
+      if (Platform.OS === 'web') {
+        console.log('Web 端不支持通知和后台任务');
+        return;
+      }
+
+      // 请求通知权限
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      setNotificationPermission(finalStatus === 'granted');
+      
+      if (finalStatus !== 'granted') {
+        Alert.alert(
+          i18n.t("notification_permission_title") || "通知权限",
+          i18n.t("notification_permission_message") || "需要通知权限才能显示解密消息"
+        );
+      }
+
+      // 自动注册后台任务
+      try {
+        await registerBackgroundFetchAsync();
+        console.log('后台任务已自动启用');
+      } catch (error) {
+        console.error('启用后台任务失败:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(KEY_STORE).then((v) => {
@@ -124,29 +196,87 @@ export default function App() {
     AsyncStorage.setItem(KEY_STORE, JSON.stringify(keys));
   }, [keys]);
 
-  // 自动检测剪贴板内容并解密
+  // 后台监听剪贴板并自动解密通知
   useEffect(() => {
+    // Web 端不支持后台剪贴板监听
+    if (Platform.OS === 'web') {
+      return;
+    }
+
+    let intervalId: NodeJS.Timeout;
+
     const checkClipboard = async () => {
-      const content = await Clipboard.getStringAsync();
-      if (content.startsWith('safe-say:') && content !== (await AsyncStorage.getItem(DECR_SATE))) {
-        const encryptedText = content.substring('safe-say:'.length);
-        setCipher(encryptedText);
-        await AsyncStorage.setItem(DECR_SATE, content);
-        // 使用当前密钥而不是默认密钥进行解密
-        setPlain(crypt(encryptedText, key, true));
+      try {
+        let content = await Clipboard.getStringAsync();
+        const lastClipboard = await AsyncStorage.getItem(LAST_CLIPBOARD);
+        
+        // 统一换行符格式为 \n
+        content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        
+        // 检测到新的加密内容
+        if (content && content.startsWith('safe-say:') && content !== lastClipboard) {
+          const encryptedText = content.substring('safe-say:'.length);
+          const decryptedText = crypt(encryptedText, key, true);
+          
+          // 更新界面
+          setCipher(encryptedText);
+          setPlain(decryptedText);
+          
+          // 保存最后处理的剪贴板内容
+          await AsyncStorage.setItem(LAST_CLIPBOARD, content);
+          
+          // 发送通知
+          if (notificationPermission) {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: i18n.t("decrypted_message") || "🔓 解密：",
+                body: decryptedText.length > 100 
+                  ? decryptedText.substring(0, 100) + "..." 
+                  : decryptedText,
+                data: { decryptedText },
+              },
+              trigger: null, // 立即显示
+            });
+          }
+        }
+      } catch (error) {
+        console.error("剪贴板检测错误:", error);
       }
     };
-    
-    // 延迟执行，确保组件完全加载后执行
-    const timer = setTimeout(checkClipboard, 500);
-    return () => clearTimeout(timer);
-  }, [key]); // 依赖于当前的key值
+
+    // 首次检查
+    checkClipboard();
+
+    // 定期检查剪贴板（每2秒）
+    intervalId = setInterval(checkClipboard, 2000);
+
+    // 监听应用状态变化
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkClipboard();
+      }
+    });
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      subscription.remove();
+    };
+  }, [key, notificationPermission]);
 
   function saveKey(k: string) {
     if (!keys.includes(k)) setKeys([k, ...keys]);
   }
   function copy(text: string) {
-    Clipboard.setStringAsync(text);
+    Clipboard.setStringAsync(text).catch((error) => {
+      // Web 端剪贴板复制失败时的提示
+      if (Platform.OS === 'web') {
+        Alert.alert(
+          i18n.t("clipboard_permission_title") || "剪贴板权限",
+          i18n.t("clipboard_copy_failed") || "复制失败，请手动复制内容"
+        );
+      }
+      console.error("复制失败:", error);
+    });
   }
   
   return (

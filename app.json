@@ -31,7 +31,24 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/favicon.png",
+          "color": "#ffffff",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-background-fetch",
+        {
+          "android": {
+            "minimumInterval": 15
+          }
+        }
+      ],
+      "expo-task-manager"
     ],
     "extra": {
       "eas": {
