@@ -12,10 +12,10 @@ import {
   Share
 } from "react-native";
 import i18n from "./i18n/locales";
-import {Platform} from "react-native/types_generated";
 
 const DEFAULT_KEY = "safety";
 const KEY_STORE = "KEY_HISTORY";
+const DECR_SATE = "DECR_SATE";
 
 /* ================= Encryption Core ================= */
 
@@ -72,31 +72,28 @@ export default function App() {
   const [plain, setPlain] = useState("");
   const [cipher, setCipher] = useState("");
 
-  useEffect(() => {
-    AsyncStorage.getItem(KEY_STORE).then((v) => {
-      if (v) setKeys(JSON.parse(v));
-    });
-  }, []);
-
-  useEffect(() => {
-    AsyncStorage.setItem(KEY_STORE, JSON.stringify(keys));
-  }, [keys]);
-
-  function saveKey(k: string) {
-    if (!keys.includes(k)) setKeys([k, ...keys]);
-  }
-  function copy(text: string) {
-    Clipboard.setStringAsync(text);
-  }
   async function  copyShare(text: string){
     if (!text) return;
     try {
-      copy(text);
+      const prefixedText = `safe-say:${text}`;
+      copy(prefixedText);
       await Share.share({
-        message: text,
+        message: prefixedText,
       });
     } catch (error) {
       Alert.alert('Error');
+    }
+  }
+
+  async function paste(setter: React.Dispatch<React.SetStateAction<string>>) {
+    const clipboardContent = await Clipboard.getStringAsync();
+    
+    // 检查内容是否包含"safe-say:"前缀，如果包含则过滤掉前缀
+    if (clipboardContent.startsWith('safe-say:')) {
+      const contentWithoutPrefix = clipboardContent.substring('safe-say:'.length);
+      setter(contentWithoutPrefix);
+    } else {
+      setter(clipboardContent);
     }
   }
 
@@ -110,6 +107,41 @@ export default function App() {
     setPlain(crypt(cipher, key, true));
   }
 
+  useEffect(() => {
+    AsyncStorage.getItem(KEY_STORE).then((v) => {
+      if (v) setKeys(JSON.parse(v));
+    });
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.setItem(KEY_STORE, JSON.stringify(keys));
+  }, [keys]);
+
+  // 自动检测剪贴板内容并解密
+  useEffect(() => {
+    const checkClipboard = async () => {
+      const content = await Clipboard.getStringAsync();
+      if (content.startsWith('safe-say:') && content !== (await AsyncStorage.getItem(DECR_SATE))) {
+        const encryptedText = content.substring('safe-say:'.length);
+        setCipher(encryptedText);
+        await AsyncStorage.setItem(DECR_SATE, content);
+        // 尝试解密（使用默认密钥）
+        setPlain(crypt(encryptedText, DEFAULT_KEY, true));
+      }
+    };
+    
+    // 延迟执行，确保组件完全加载后执行
+    const timer = setTimeout(checkClipboard, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  function saveKey(k: string) {
+    if (!keys.includes(k)) setKeys([k, ...keys]);
+  }
+  function copy(text: string) {
+    Clipboard.setStringAsync(text);
+  }
+  
   return (
     <ScrollView style={styles.container}>
       <View style={{height: 25}}></View>
@@ -136,15 +168,20 @@ export default function App() {
       </View>
 
       <Text style={styles.label}>{i18n.t("plaintext")}</Text>
-      <TextInput
-        style={styles.textArea}
-        multiline
-        value={plain}
-        onChangeText={setPlain}
-      />
-      {/* <TouchableOpacity onPress={() => copy(plain)}>
-        <Text style={styles.copy}>{i18n.t("copy_plain")}</Text>
-      </TouchableOpacity> */}
+      <View style={styles.textAreaContainer}>
+        <TextInput
+          style={styles.textArea}
+          multiline
+          value={plain}
+          onChangeText={setPlain}
+        />
+        <TouchableOpacity 
+          style={[styles.pasteBtn, {top: 14}]} 
+          onPress={() => paste(setPlain)}
+        >
+          <Text style={styles.pasteText}>{i18n.t("paste")}</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.row}>
         <TouchableOpacity style={styles.btn} onPress={encrypt}>
@@ -157,14 +194,22 @@ export default function App() {
       </View>
 
       <Text style={styles.label}>{i18n.t("ciphertext")}</Text>
-      <TextInput
-        style={styles.textArea}
-        multiline
-        value={cipher}
-        onChangeText={setCipher}
-      />
+      <View style={styles.textAreaContainer}>
+        <TextInput
+          style={styles.textArea}
+          multiline
+          value={cipher}
+          onChangeText={setCipher}
+        />
+        <TouchableOpacity 
+          style={[styles.pasteBtn, {top: 14}]} 
+          onPress={() => paste(setCipher)}
+        >
+          <Text style={styles.pasteText}>{i18n.t("paste")}</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.copyLink}>
-        <TouchableOpacity onPress={() => copy(cipher)}>
+        <TouchableOpacity onPress={() => copy(`safe-say:${cipher}`)}>
           <Text style={styles.copy}>{i18n.t("copy_cipher")}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => copyShare(cipher)}>
@@ -286,5 +331,22 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  textAreaContainer: {
+    position: 'relative',
+    width: '100%',
+  },
+  pasteBtn: {
+    position: 'absolute',
+    right: 14,
+    zIndex: 1,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  pasteText: {
+    color: '#007bff3b',
+    fontSize: 14,
+    fontWeight: '600',
   }
 });

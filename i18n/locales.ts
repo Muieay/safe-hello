@@ -14,6 +14,7 @@ const i18n = new I18n({
         copy_share: "复制 / 分享",
         copy_success: "已复制到剪贴板",
         error: "错误",
+        paste: "粘贴",
     },
     en: {
         title: "🔐 Text Encryption Tool",
@@ -27,6 +28,7 @@ const i18n = new I18n({
         copy_share: "Copy / Share",
         copy_success: "Copied to clipboard",
         error: "Error",
+        paste: "Paste",
     },
 });
 
